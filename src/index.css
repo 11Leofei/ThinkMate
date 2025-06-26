@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #0D1117;
+    --foreground: #E6EDF3;
+    --card: #161B22;
+    --card-hover: #21262D;
+    --primary: #2563EB;
+    --primary-hover: #1D4ED8;
+    --secondary: #30363D;
+    --muted: #21262D;
+    --muted-foreground: #7D8590;
+    --border: #30363D;
+    --input: #0D1117;
+    --ring: #2563EB;
+  }
+
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* Custom scrollbar - Cursor style */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: #30363D;
+    border-radius: 3px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: #373E47;
+  }
+  
+  /* Selection color */
+  ::selection {
+    background-color: #2563EB40;
+  }
+  
+  /* Focus styles */
+  .focus-ring {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+}
+
+@layer components {
+  /* Button variants */
+  .btn-primary {
+    @apply bg-primary hover:bg-primary-hover text-primary-foreground font-medium px-4 py-2 rounded-md transition-colors focus-ring;
+  }
+  
+  .btn-secondary {
+    @apply bg-secondary hover:bg-secondary-hover text-foreground font-medium px-4 py-2 rounded-md transition-colors focus-ring;
+  }
+  
+  .btn-ghost {
+    @apply hover:bg-muted text-foreground font-medium px-4 py-2 rounded-md transition-colors focus-ring;
+  }
+  
+  /* Input styles */
+  .input {
+    @apply bg-input border border-border rounded-md px-3 py-2 text-sm placeholder:text-muted-foreground focus-ring transition-colors;
+  }
+  
+  /* Card styles */
+  .card {
+    @apply bg-card border border-border rounded-lg;
+  }
+  
+  .card-hover {
+    @apply card hover:bg-card-hover transition-colors cursor-pointer;
+  }
+  
+  /* Typography */
+  .text-heading {
+    @apply text-xl font-semibold tracking-tight;
+  }
+  
+  .text-subheading {
+    @apply text-base font-medium;
+  }
+  
+  .text-body {
+    @apply text-sm text-foreground;
+  }
+  
+  .text-muted {
+    @apply text-sm text-muted-foreground;
+  }
+  
+  /* Animations */
+  .animate-in {
+    @apply animate-fade-in;
+  }
+  
+  .slide-in {
+    @apply animate-slide-up;
+  }
+}
