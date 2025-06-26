@@ -5,6 +5,9 @@ export interface Thought {
   tags: string[]
   category?: string
   aiAnalysis?: ThoughtAnalysis
+  isFavorite?: boolean
+  connections?: string[] // IDs of connected thoughts
+  lastModified?: Date
 }
 
 export interface ThoughtAnalysis {
@@ -43,3 +46,34 @@ export interface CaptureMethod {
   quickCapture: boolean
   autoSave: boolean
 }
+
+export interface Connection {
+  id: string
+  fromThoughtId: string
+  toThoughtId: string
+  type: 'related' | 'opposite' | 'builds_on' | 'inspired_by' | 'question_answer'
+  strength: number // 1-5
+  description?: string
+  createdAt: Date
+}
+
+export interface ThoughtTemplate {
+  id: string
+  name: string
+  description: string
+  prompt: string
+  category: string
+  icon: string
+}
+
+export interface ExportFormat {
+  type: 'json' | 'markdown' | 'pdf' | 'csv'
+  includeAnalysis: boolean
+  includeMeta: boolean
+  dateRange?: { start: Date; end: Date }
+}
+
+// Re-export all types from modules
+export * from './media'
+export * from './knowledge'
+export * from './mcp'
