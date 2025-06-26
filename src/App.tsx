@@ -5,8 +5,10 @@ import { cn } from './lib/utils'
 import { Thought } from './types'
 import { useTranslation } from './hooks/useTranslation'
 import { formatRelativeTime } from './lib/timeFormat'
-import { AIThoughtAnalyzer } from './lib/aiAnalyzer'
+import { createAIService, getAIService } from './lib/aiService'
 import { translations } from './lib/i18n'
+import { AIConfigModal } from './components/features/AIConfigModal'
+import { ThoughtStorage } from './lib/storage'
 
 function App() {
   const { t, currentLanguage, changeLanguage } = useTranslation()
@@ -14,7 +16,20 @@ function App() {
   const [currentThought, setCurrentThought] = useState('')
   const [isCapturing, setIsCapturing] = useState(false)
   const [liveAnalysis, setLiveAnalysis] = useState<any>(null)
+  const [showAIConfig, setShowAIConfig] = useState(false)
+  const [aiConfigured, setAIConfigured] = useState(false)
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // 加载本地存储的想法
+  useEffect(() => {
+    const savedThoughts = ThoughtStorage.loadThoughts()
+    setThoughts(savedThoughts)
+    
+    // 获取最后保存时间
+    const stats = ThoughtStorage.getStorageStats()
+    setLastSaved(stats.lastSaved)
+  }, [])
 
   // Auto-focus the capture input
   useEffect(() => {
@@ -23,27 +38,66 @@ function App() {
     }
   }, [])
 
+  // 初始化AI服务
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('thinkmate-ai-config')
+    if (savedConfig) {
+      try {
+        const config = JSON.parse(savedConfig)
+        createAIService({
+          primary: config,
+          enablePersonalization: true,
+          cacheResults: true
+        })
+        setAIConfigured(true)
+      } catch (error) {
+        console.error('AI配置加载失败:', error)
+      }
+    }
+  }, [])
+
   // 实时分析用户输入
   useEffect(() => {
-    if (currentThought.length > 20) {
-      const tempThought: Thought = {
-        id: 'temp',
-        content: currentThought,
-        timestamp: new Date(),
-        tags: [],
-        category: ''
+    if (currentThought.length > 20 && aiConfigured) {
+      const aiService = getAIService()
+      if (aiService) {
+        const tempThought: Thought = {
+          id: 'temp',
+          content: currentThought,
+          timestamp: new Date(),
+          tags: [],
+          category: ''
+        }
+        // 异步分析，不阻塞界面
+        aiService.analyzeThought(tempThought, thoughts).then(analysis => {
+          setLiveAnalysis(analysis)
+        }).catch(error => {
+          console.error('实时分析失败:', error)
+          setLiveAnalysis(null)
+        })
       }
-      const analysis = AIThoughtAnalyzer.analyzeThought(tempThought)
-      setLiveAnalysis(analysis)
     } else {
       setLiveAnalysis(null)
     }
-  }, [currentThought])
+  }, [currentThought, aiConfigured, thoughts])
 
   // 生成整体思维洞察
-  const overallAnalysis = thoughts.length > 0 ? AIThoughtAnalyzer.analyzeThinkingPatterns(thoughts) : null
+  const [overallAnalysis, setOverallAnalysis] = useState<any>(null)
+  
+  useEffect(() => {
+    if (thoughts.length > 0 && aiConfigured) {
+      const aiService = getAIService()
+      if (aiService) {
+        aiService.analyzeThinkingPatterns(thoughts).then(analysis => {
+          setOverallAnalysis(analysis)
+        }).catch(error => {
+          console.error('整体分析失败:', error)
+        })
+      }
+    }
+  }, [thoughts, aiConfigured])
 
-  const handleCapture = () => {
+  const handleCapture = async () => {
     if (!currentThought.trim()) return
 
     const newThought: Thought = {
@@ -55,21 +109,54 @@ function App() {
     }
 
     // AI分析
-    const analysis = AIThoughtAnalyzer.analyzeThought(newThought)
-    newThought.aiAnalysis = analysis
-    
-    // 根据AI分析更新分类
-    if (analysis.pattern) {
-      const patternTranslationKey = analysis.pattern.type as keyof typeof translations.zh
-      newThought.category = t(patternTranslationKey) || t('general')
-    }
-    
-    // 自动生成标签
-    if (analysis.themes.length > 0) {
-      newThought.tags = analysis.themes.slice(0, 3) // 最多3个标签
+    if (aiConfigured) {
+      const aiService = getAIService()
+      if (aiService) {
+        try {
+          const analysis = await aiService.analyzeThought(newThought, thoughts)
+          newThought.aiAnalysis = analysis
+          
+          // 根据AI分析更新分类
+          if (analysis.pattern) {
+            const patternTranslationKey = analysis.pattern.type as keyof typeof translations.zh
+            newThought.category = t(patternTranslationKey) || t('general')
+          }
+          
+          // 自动生成标签
+          if (analysis.themes.length > 0) {
+            newThought.tags = analysis.themes.slice(0, 3) // 最多3个标签
+          }
+        } catch (error) {
+          console.error('AI分析失败:', error)
+          // 使用基础分析作为备选
+          newThought.aiAnalysis = {
+            sentiment: 'neutral',
+            themes: ['思考'],
+            connections: [],
+            insights: ['AI分析暂时不可用'],
+            pattern: {
+              type: 'reflective',
+              frequency: 1,
+              recentTrend: 'stable',
+              recommendations: ['继续记录你的想法']
+            }
+          }
+        }
+      }
     }
 
-    setThoughts(prev => [newThought, ...prev])
+    const updatedThoughts = [newThought, ...thoughts]
+    setThoughts(updatedThoughts)
+    
+    // 自动保存到本地存储
+    try {
+      ThoughtStorage.saveThoughts(updatedThoughts)
+      setLastSaved(new Date())
+    } catch (error) {
+      console.error('自动保存失败:', error)
+      // 可以在这里添加用户提示
+    }
+    
     setCurrentThought('')
     setIsCapturing(false)
     
@@ -82,6 +169,21 @@ function App() {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       handleCapture()
+    }
+  }
+
+  const handleAIConfig = (config: any) => {
+    try {
+      localStorage.setItem('thinkmate-ai-config', JSON.stringify(config))
+      createAIService({
+        primary: config,
+        enablePersonalization: true,
+        cacheResults: true
+      })
+      setAIConfigured(true)
+      console.log('AI配置已保存:', config.provider)
+    } catch (error) {
+      console.error('AI配置保存失败:', error)
     }
   }
 
@@ -105,20 +207,55 @@ function App() {
             <NavItem icon={PenTool} label={t('capture')} active />
             <NavItem icon={Sparkles} label={t('insights')} />
             <NavItem icon={Calendar} label={t('patterns')} />
-            <NavItem icon={Settings} label={t('settings')} />
+            <NavItem 
+              icon={Settings} 
+              label={t('settings')} 
+              onClick={() => setShowAIConfig(true)}
+            />
           </nav>
 
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-muted-foreground">
-              {thoughts.length} {t('thoughtsCount')}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-muted-foreground">
+                {thoughts.length} {t('thoughtsCount')}
+              </div>
+              <button
+                onClick={() => changeLanguage(currentLanguage === 'zh' ? 'en' : 'zh')}
+                className="p-1 rounded hover:bg-muted transition-colors"
+                title="切换语言 / Switch Language"
+              >
+                <Globe className="w-4 h-4 text-muted-foreground" />
+              </button>
             </div>
-            <button
-              onClick={() => changeLanguage(currentLanguage === 'zh' ? 'en' : 'zh')}
-              className="p-1 rounded hover:bg-muted transition-colors"
-              title="切换语言 / Switch Language"
-            >
-              <Globe className="w-4 h-4 text-muted-foreground" />
-            </button>
+            
+            {/* AI状态指示器 */}
+            <div className="flex items-center gap-2 text-xs">
+              <div className={cn(
+                "w-2 h-2 rounded-full",
+                aiConfigured ? "bg-green-500" : "bg-yellow-500"
+              )} />
+              <span className="text-muted-foreground">
+                AI: {aiConfigured ? '已连接' : '未配置'}
+              </span>
+              {!aiConfigured && (
+                <button
+                  onClick={() => setShowAIConfig(true)}
+                  className="text-primary hover:text-primary-hover underline"
+                >
+                  设置
+                </button>
+              )}
+            </div>
+            
+            {/* 存储状态 */}
+            <div className="text-xs text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-blue-500 rounded-full" />
+                <span>
+                  {lastSaved ? `已保存 ${formatRelativeTime(lastSaved)}` : '未保存'}
+                </span>
+              </div>
+            </div>
           </div>
         </motion.aside>
 
@@ -257,7 +394,7 @@ function App() {
                   {overallAnalysis.deadEndWarnings.length > 0 && (
                     <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-md">
                       <div className="text-sm text-red-400 font-medium mb-2">⚠️ 思维模式警告</div>
-                      {overallAnalysis.deadEndWarnings.map((warning, index) => (
+                      {overallAnalysis.deadEndWarnings.map((warning: string, index: number) => (
                         <div key={index} className="text-sm text-red-300 mb-1">
                           {warning}
                         </div>
@@ -270,7 +407,7 @@ function App() {
                     <div className="mb-4">
                       <div className="text-sm font-medium mb-2">主导思维模式:</div>
                       <div className="flex flex-wrap gap-2">
-                        {overallAnalysis.dominantPatterns.slice(0, 3).map((pattern, index) => (
+                        {overallAnalysis.dominantPatterns.slice(0, 3).map((pattern: any, index: number) => (
                           <span key={index} className="px-3 py-1 bg-primary/20 text-primary text-sm rounded-full">
                             {pattern.type === 'creative' ? '💡 创意型' :
                              pattern.type === 'analytical' ? '🔍 分析型' :
@@ -288,7 +425,7 @@ function App() {
                     <div>
                       <div className="text-sm font-medium mb-2">智能洞察:</div>
                       <div className="space-y-1">
-                        {overallAnalysis.insights.map((insight, index) => (
+                        {overallAnalysis.insights.map((insight: string, index: number) => (
                           <div key={index} className="text-sm text-muted-foreground">
                             {insight}
                           </div>
@@ -393,6 +530,14 @@ function App() {
           </motion.div>
         </main>
       </div>
+
+      {/* AI配置模态框 */}
+      <AIConfigModal
+        isOpen={showAIConfig}
+        onClose={() => setShowAIConfig(false)}
+        onSave={handleAIConfig}
+        currentConfig={aiConfigured ? JSON.parse(localStorage.getItem('thinkmate-ai-config') || '{}') : undefined}
+      />
     </div>
   )
 }
@@ -401,9 +546,10 @@ interface NavItemProps {
   icon: React.ComponentType<{ className?: string }>
   label: string
   active?: boolean
+  onClick?: () => void
 }
 
-function NavItem({ icon: Icon, label, active = false }: NavItemProps) {
+function NavItem({ icon: Icon, label, active = false, onClick }: NavItemProps) {
   return (
     <motion.div
       className={cn(
@@ -412,6 +558,7 @@ function NavItem({ icon: Icon, label, active = false }: NavItemProps) {
           ? "bg-primary text-white" 
           : "hover:bg-muted text-muted-foreground hover:text-foreground"
       )}
+      onClick={onClick}
       whileHover={{ x: 2 }}
       whileTap={{ scale: 0.98 }}
     >
