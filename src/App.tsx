@@ -116,8 +116,10 @@ function App() {
     }
   }, [])
 
-  // 实时分析用户输入 - 暂时禁用以保持稳定性
-  /*useEffect(() => {
+  // 实时分析用户输入 - 修复循环依赖问题  
+  useEffect(() => {
+    // 防抖处理，避免频繁触发
+    const timer = setTimeout(() => {
     if (currentThought.length > 20) {
       if (aiConfigured) {
         const aiService = getAIService()
@@ -130,10 +132,11 @@ function App() {
             category: ''
           }
           
-          // 设置分析超时
-          const analysisPromise = aiService.analyzeThought(tempThought, thoughts)
+          // 设置分析超时，使用静态的thoughts引用避免循环依赖
+          const currentThoughts = thoughts.slice() // 创建副本
+          const analysisPromise = aiService.analyzeThought(tempThought, currentThoughts)
           const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('AI分析超时')), 10000) // 10秒超时
+            setTimeout(() => reject(new Error('AI分析超时')), 5000) // 5秒超时
           })
           
           Promise.race([analysisPromise, timeoutPromise])
@@ -175,7 +178,10 @@ function App() {
     } else {
       setLiveAnalysis(null)
     }
-  }, [currentThought, aiConfigured, thoughts])*/
+    }, 500) // 500ms防抖
+
+    return () => clearTimeout(timer)
+  }, [currentThought, aiConfigured]) // 移除thoughts依赖，避免循环
 
   // 生成整体思维洞察
   const [overallAnalysis, setOverallAnalysis] = useState<any>(null)
