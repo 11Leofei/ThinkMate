@@ -22,7 +22,8 @@ import { ThoughtStorage } from './lib/storage'
 import { getMediaService } from './lib/mediaService'
 import { getKnowledgeService } from './lib/knowledgeService'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
-import { initializeThinkMateExtensions, getPluginRegistry } from './lib/architecture/PluginRegistry'
+// 动态导入扩展系统，避免循环依赖
+// import { initializeThinkMateExtensions, getPluginRegistry } from './lib/architecture/PluginRegistry'
 
 function App() {
   const { t, currentLanguage, changeLanguage } = useTranslation()
@@ -78,12 +79,12 @@ function App() {
     }
   }, [])
 
-  // 初始化扩展系统 - 使用安全的延迟加载
+  // 初始化扩展系统 - 使用完全动态导入避免循环依赖
   useEffect(() => {
     const initializeExtensions = async () => {
       try {
-        // 延迟初始化，确保其他服务已准备好
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        // 延迟初始化，确保应用已完全加载
+        await new Promise(resolve => setTimeout(resolve, 2000))
         
         // 检查必要服务是否已初始化
         const aiService = getAIService()
@@ -92,7 +93,11 @@ function App() {
           return
         }
         
-        console.log('开始初始化扩展系统...')
+        console.log('开始动态加载扩展系统...')
+        
+        // 动态导入扩展系统
+        const { initializeThinkMateExtensions, getPluginRegistry } = await import('./lib/architecture/PluginRegistry')
+        
         await initializeThinkMateExtensions()
         setExtensionsInitialized(true)
         console.log('扩展系统初始化完成')
