@@ -8,7 +8,7 @@ import {
   Moon, Sun, Palette, Database, Zap, Target, Shield,
   Activity, TrendingUp, Clock, Tag, Star, Archive,
   Filter, Download, Upload as UploadIcon, Share2,
-  Layers, Eye, EyeOff, Volume2, VolumeX, Wifi, WifiOff
+  Layers, Eye, EyeOff, Volume2, VolumeX, Wifi, WifiOff, Heart
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { formatRelativeTime } from '../../lib/timeFormat'
@@ -160,6 +160,15 @@ export const EnhancedSidebar: React.FC<EnhancedSidebarProps> = ({
           view: 'graph',
           color: 'text-indigo-500',
           isNew: true
+        },
+        {
+          id: 'health',
+          icon: Heart,
+          label: '思维健康',
+          view: 'health',
+          color: 'text-red-500',
+          isNew: true,
+          badge: '报告'
         }
       ]
     },

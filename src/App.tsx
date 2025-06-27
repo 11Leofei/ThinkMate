@@ -29,6 +29,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import QualityIndicator from './extensions/quality/QualityIndicator'
 import QualityScoreService from './extensions/quality/QualityScoreService'
 import RealtimeGuidance from './extensions/coach/RealtimeGuidance'
+import ThinkingHealthReport from './extensions/coach/ThinkingHealthReport'
 
 function App() {
   const { t, currentLanguage, changeLanguage } = useTranslation()
@@ -41,7 +42,7 @@ function App() {
   const [aiConfigured, setAIConfigured] = useState(false)
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const [searchResults, setSearchResults] = useState<Thought[] | null>(null)
-  const [currentView, setCurrentView] = useState<'capture' | 'search' | 'insights' | 'patterns' | 'daily' | 'connections' | 'upload' | 'knowledge' | 'graph' | 'mcp'>('capture')
+  const [currentView, setCurrentView] = useState<'capture' | 'search' | 'insights' | 'patterns' | 'daily' | 'connections' | 'upload' | 'knowledge' | 'graph' | 'mcp' | 'health'>('capture')
   const [connections, setConnections] = useState<Connection[]>([])
   const [selectedThoughtId, setSelectedThoughtId] = useState<string>('')
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([])
@@ -52,6 +53,7 @@ function App() {
   
   // 质量分析状态
   const [currentQualityScore, setCurrentQualityScore] = useState(0)
+  const [qualityScoreHistory, setQualityScoreHistory] = useState<number[]>([])
   const [qualityService] = useState(() => QualityScoreService.getInstance())
   
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -156,6 +158,10 @@ function App() {
       try {
         const quality = await qualityService.processThought(currentThought)
         setCurrentQualityScore(quality.overall)
+        // 更新质量分数历史
+        if (quality.overall > 0) {
+          setQualityScoreHistory(prev => [...prev, quality.overall].slice(-100)) // 保留最近100次
+        }
       } catch (error) {
         console.error('质量分析失败:', error)
         setCurrentQualityScore(0)
@@ -397,7 +403,7 @@ function App() {
     setSearchResults(null)
   }
 
-  const handleViewChange = (view: 'capture' | 'search' | 'insights' | 'patterns' | 'daily' | 'connections' | 'upload' | 'knowledge' | 'graph' | 'mcp') => {
+  const handleViewChange = (view: 'capture' | 'search' | 'insights' | 'patterns' | 'daily' | 'connections' | 'upload' | 'knowledge' | 'graph' | 'mcp' | 'health') => {
     setCurrentView(view)
     if (view !== 'search') {
       setSearchResults(null)
@@ -1162,6 +1168,21 @@ function App() {
                   }}
                   onResourceSelect={(resource) => {
                     console.log('Selected MCP resource:', resource)
+                  }}
+                />
+              </div>
+            )}
+            
+            {/* Thinking Health Report View */}
+            {currentView === 'health' && (
+              <div className="max-w-4xl mx-auto">
+                <ThinkingHealthReport
+                  userId="user-1"
+                  thoughtHistory={thoughts}
+                  qualityScores={qualityScoreHistory}
+                  period="week"
+                  onInsightClick={(insight) => {
+                    console.log('点击了洞察:', insight)
                   }}
                 />
               </div>
