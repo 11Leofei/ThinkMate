@@ -1601,12 +1601,7 @@ export class GraphVisualizationEngine {
     )
   }
 
-  highlightNodes(nodeIds: string[]): void {
-    this.data.nodes.forEach(node => {
-      node.highlighted = nodeIds.includes(node.id)
-    })
-    this.render()
-  }
+  // highlightNodes 方法已在第134行定义
 
   clearHighlight(): void {
     this.data.nodes.forEach(node => {
@@ -1645,7 +1640,7 @@ export class GraphVisualizationEngine {
   private currentZoom = 1
   private panX = 0  
   private panY = 0
-  private isAnimating = false
+  // isAnimating 已在第37行定义
 }
 
 // 单例导出

@@ -34,6 +34,9 @@ Visualizes invisible connections between ideas using physics simulation. Watch y
 ### 🎨 Ambient Intelligence
 Interface that breathes with your environment. Adapts to time of day, weather, and your energy levels.
 
+### 🎯 Thinking Coach System (NEW!)
+Your personal AI thinking mentor - like having Steve Jobs guide your cognitive growth. Features real-time guidance, personalized training plans, milestone celebrations, and thinking health reports.
+
 **Integration**: All extensions work seamlessly without modifying existing code. Use individually or experience the complete magic with `JobsMasterpiece.tsx`.
 
 ## Design Philosophy
