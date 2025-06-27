@@ -99,11 +99,22 @@ export const graphVisualizationPlugin: Plugin = new PluginBuilder()
   .author('ThinkMate Team')
   .dependencies(['thinkmate.core.linking'])
   .onLoad(async (framework) => {
-    // 动态导入可视化引擎
-    const { GraphVisualizationEngine } = await import('../visualization/GraphVisualizationEngine')
-    
-    // 注册可视化引擎
-    framework.registerProvider('visualization', 'graph', GraphVisualizationEngine)
+    // 动态导入可视化引擎 - 安全处理
+    try {
+      const { GraphVisualizationEngine } = await import('../visualization/GraphVisualizationEngine')
+      
+      // 创建工厂函数而不是直接传递类
+      const graphEngineFactory = {
+        create: (container: HTMLElement, config?: any) => {
+          return new GraphVisualizationEngine(container, config)
+        }
+      }
+      
+      // 注册可视化引擎工厂
+      framework.registerProvider('visualization', 'graph', graphEngineFactory)
+    } catch (error) {
+      console.error('加载图谱可视化引擎失败:', error)
+    }
     
     // 注册可视化命令
     framework.registerCommand({
@@ -146,12 +157,16 @@ export const mediaProcessingPlugin: Plugin = new PluginBuilder()
   .description('处理图片、音频、文档等媒体文件')
   .author('ThinkMate Team')
   .onLoad(async (framework) => {
-    // 动态导入媒体服务
-    const { getMediaService } = await import('../mediaService')
-    const mediaService = getMediaService()
-    
-    // 注册媒体处理器
-    framework.registerProvider('media', 'processor', mediaService)
+    // 动态导入媒体服务 - 安全处理
+    try {
+      const { getMediaService } = await import('../mediaService')
+      const mediaService = getMediaService()
+      
+      // 注册媒体处理器
+      framework.registerProvider('media', 'processor', mediaService)
+    } catch (error) {
+      console.error('加载媒体服务失败:', error)
+    }
     
     // 注册文件处理命令
     framework.registerCommand({
@@ -199,12 +214,16 @@ export const knowledgeManagementPlugin: Plugin = new PluginBuilder()
   .description('管理知识库和学习资源')
   .author('ThinkMate Team')
   .onLoad(async (framework) => {
-    // 动态导入知识服务
-    const { getKnowledgeService } = await import('../knowledgeService')
-    const knowledgeService = getKnowledgeService()
-    
-    // 注册知识管理器
-    framework.registerProvider('knowledge', 'manager', knowledgeService)
+    // 动态导入知识服务 - 安全处理
+    try {
+      const { getKnowledgeService } = await import('../knowledgeService')
+      const knowledgeService = getKnowledgeService()
+      
+      // 注册知识管理器
+      framework.registerProvider('knowledge', 'manager', knowledgeService)
+    } catch (error) {
+      console.error('加载知识服务失败:', error)
+    }
     
     // 注册知识库操作命令
     framework.registerCommand({
@@ -381,15 +400,33 @@ export class PluginRegistry {
   async initializeCorePlugins(): Promise<void> {
     console.log('正在加载核心插件...')
     
-    for (const plugin of this.corePlugins) {
-      try {
-        await this.framework.loadPlugin(plugin)
-      } catch (error) {
-        console.error(`加载核心插件失败 ${plugin.id}:`, error)
-      }
+    // 分批加载插件，避免循环依赖
+    const loadBatches = [
+      // 第一批：无依赖插件
+      [coreAIPlugin, thoughtLinkingPlugin, dataExportPlugin],
+      // 第二批：依赖基础插件
+      [mediaProcessingPlugin, knowledgeManagementPlugin],
+      // 第三批：依赖复杂插件
+      [graphVisualizationPlugin, mcpIntegrationPlugin]
+    ]
+    
+    let loadedCount = 0
+    for (const batch of loadBatches) {
+      const batchPromises = batch.map(async (plugin) => {
+        try {
+          await this.framework.loadPlugin(plugin)
+          loadedCount++
+          console.log(`✓ 加载插件: ${plugin.name}`)
+        } catch (error) {
+          console.error(`✗ 加载插件失败 ${plugin.id}:`, error)
+        }
+      })
+      
+      // 等待当前批次完成
+      await Promise.allSettled(batchPromises)
     }
     
-    console.log(`已加载 ${this.corePlugins.length} 个核心插件`)
+    console.log(`成功加载 ${loadedCount}/${this.corePlugins.length} 个核心插件`)
   }
 
   // 获取框架实例

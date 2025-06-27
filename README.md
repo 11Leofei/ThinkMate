@@ -9,6 +9,33 @@ Your AI Thinking Partner - A minimalist second brain that captures thoughts inst
 - **Thinking Patterns**: Daily insights into your mental processes
 - **Minimalist Design**: Cursor dark theme with Apple-inspired aesthetics
 
+## 🍎 Revolutionary Extensions (Jobs Edition)
+
+Following Steve Jobs' vision of creating magical user experiences, ThinkMate now includes seven groundbreaking extensions that transform thinking from a task into a delightful journey:
+
+### 💎 Thought Quality System
+Real-time quality analysis of your thoughts - like iPhone battery health for your mind. Get instant feedback on clarity, depth, originality, and coherence.
+
+### 🎵 Cognitive Rhythm Detection  
+Discovers your optimal thinking times and cognitive patterns. Like Apple Watch activity tracking, but for your mental energy.
+
+### ✨ Essence Extraction
+Creates beautiful weekly/monthly summaries of your thinking journey. iOS-style "Year in Review" for your thoughts.
+
+### 🧠 Cognitive Bias Detector
+Gently expands your perspective without judgment. Identifies thinking patterns and suggests alternative viewpoints.
+
+### ⏰ Memory Resurrection
+Time machine for your thoughts. Intelligently connects current ideas to relevant past insights.
+
+### 🌌 Thought Gravity Field
+Visualizes invisible connections between ideas using physics simulation. Watch your thoughts attract and form constellations.
+
+### 🎨 Ambient Intelligence
+Interface that breathes with your environment. Adapts to time of day, weather, and your energy levels.
+
+**Integration**: All extensions work seamlessly without modifying existing code. Use individually or experience the complete magic with `JobsMasterpiece.tsx`.
+
 ## Design Philosophy
 
 Built with Jobs-level attention to detail:

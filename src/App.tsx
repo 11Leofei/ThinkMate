@@ -78,25 +78,41 @@ function App() {
     }
   }, [])
 
-  // 初始化扩展系统 - 暂时禁用，需要深度调试
-  // useEffect(() => {
-  //   const initializeExtensions = async () => {
-  //     try {
-  //       await initializeThinkMateExtensions()
-  //       setExtensionsInitialized(true)
-  //       console.log('扩展系统初始化完成')
-  //       
-  //       // 获取系统信息
-  //       const registry = getPluginRegistry()
-  //       const systemInfo = registry.getSystemInfo()
-  //       console.log('系统信息:', systemInfo)
-  //     } catch (error) {
-  //       console.error('扩展系统初始化失败:', error)
-  //     }
-  //   }
-  //   
-  //   initializeExtensions()
-  // }, [])
+  // 初始化扩展系统 - 使用安全的延迟加载
+  useEffect(() => {
+    const initializeExtensions = async () => {
+      try {
+        // 延迟初始化，确保其他服务已准备好
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        
+        // 检查必要服务是否已初始化
+        const aiService = getAIService()
+        if (!aiService) {
+          console.warn('AI服务未初始化，跳过扩展系统初始化')
+          return
+        }
+        
+        console.log('开始初始化扩展系统...')
+        await initializeThinkMateExtensions()
+        setExtensionsInitialized(true)
+        console.log('扩展系统初始化完成')
+        
+        // 获取系统信息
+        const registry = getPluginRegistry()
+        const systemInfo = registry.getSystemInfo()
+        console.log('系统信息:', systemInfo)
+      } catch (error) {
+        console.error('扩展系统初始化失败:', error)
+        // 不让扩展系统的失败影响主应用
+        setExtensionsInitialized(false)
+      }
+    }
+    
+    // 只在AI配置后初始化扩展
+    if (aiConfigured) {
+      initializeExtensions()
+    }
+  }, [aiConfigured])
 
   // 初始化AI服务
   useEffect(() => {
