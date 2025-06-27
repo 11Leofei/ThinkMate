@@ -25,6 +25,11 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 // 动态导入扩展系统，避免循环依赖
 // import { initializeThinkMateExtensions, getPluginRegistry } from './lib/architecture/PluginRegistry'
 
+// 导入质量指示器扩展
+import QualityIndicator from './extensions/quality/QualityIndicator'
+import QualityScoreService from './extensions/quality/QualityScoreService'
+import RealtimeGuidance from './extensions/coach/RealtimeGuidance'
+
 function App() {
   const { t, currentLanguage, changeLanguage } = useTranslation()
   const [thoughts, setThoughts] = useState<Thought[]>([])
@@ -44,6 +49,11 @@ function App() {
   const [selectedKnowledgeItem, setSelectedKnowledgeItem] = useState<string>('')
   const [enhancedThoughts, setEnhancedThoughts] = useState<Thought[]>([])
   const [, setExtensionsInitialized] = useState(false)
+  
+  // 质量分析状态
+  const [currentQualityScore, setCurrentQualityScore] = useState(0)
+  const [qualityService] = useState(() => QualityScoreService.getInstance())
+  
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mediaService = getMediaService()
   const knowledgeService = getKnowledgeService()
@@ -140,8 +150,16 @@ function App() {
   // 实时分析用户输入 - 修复循环依赖问题  
   useEffect(() => {
     // 防抖处理，避免频繁触发
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
     if (currentThought.length > 20) {
+      // 实时质量分析
+      try {
+        const quality = await qualityService.processThought(currentThought)
+        setCurrentQualityScore(quality.overall)
+      } catch (error) {
+        console.error('质量分析失败:', error)
+        setCurrentQualityScore(0)
+      }
       if (aiConfigured) {
         const aiService = getAIService()
         if (aiService) {
@@ -684,6 +702,16 @@ function App() {
             {currentView === 'capture' && (
               <div className="max-w-2xl mx-auto">
                 <div className="relative">
+                  {/* 质量指示器 */}
+                  {currentThought.length > 20 && (
+                    <div className="absolute top-4 right-4 z-10">
+                      <QualityIndicator 
+                        score={currentQualityScore} 
+                        size="medium" 
+                        showDetails={true}
+                      />
+                    </div>
+                  )}
                   <textarea
                     ref={textareaRef}
                     value={currentThought}
@@ -716,6 +744,14 @@ function App() {
                     {t('captureButton')}
                   </motion.button>
                 </div>
+                
+                {/* 实时指导 */}
+                <RealtimeGuidance
+                  currentThought={currentThought}
+                  qualityScore={currentQualityScore}
+                  isTyping={currentThought.length > 0}
+                  className="mt-4"
+                />
 
                 {/* AI实时分析建议 */}
                 <AnimatePresence>

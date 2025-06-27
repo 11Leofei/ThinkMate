@@ -148,7 +148,7 @@ const GentleNudge: React.FC<GentleNudgeProps> = ({
                   Noticed in: "{currentDetection.evidence[0]}"
                 </div>
               )}
-            </div>
+            </motion.div>
 
             {/* Gentle suggestion */}
             <motion.div
@@ -160,7 +160,7 @@ const GentleNudge: React.FC<GentleNudgeProps> = ({
               <p className="text-sm text-blue-800 dark:text-blue-200">
                 {currentDetection.gentleSuggestion}
               </p>
-            </div>
+            </motion.div>
 
             {/* Expanding questions preview */}
             {currentDetection.expandingQuestions.length > 0 && (
