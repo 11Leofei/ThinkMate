@@ -78,7 +78,7 @@ function App() {
     }
   }, [])
 
-  // 初始化扩展系统 - 暂时禁用以保持稳定性
+  // 初始化扩展系统 - 暂时禁用，需要深度调试
   // useEffect(() => {
   //   const initializeExtensions = async () => {
   //     try {

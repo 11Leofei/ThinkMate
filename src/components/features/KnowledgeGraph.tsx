@@ -78,7 +78,9 @@ export function KnowledgeGraph({
         setIsLoading(true)
         setError(null)
         
-        // 创建引擎实例
+        // 创建引擎实例 - 安全检查
+        if (!containerRef.current) return
+        
         const engine = new GraphVisualizationEngine(containerRef.current, {
           width: containerRef.current.clientWidth,
           height: height,
@@ -98,8 +100,14 @@ export function KnowledgeGraph({
         engine.on('error', handleError)
         engine.on('layoutComplete', handleLayoutComplete)
         
-        // 加载数据
-        await engine.loadGraphData(thoughts, knowledgeItems)
+        // 加载数据 - 转换为兼容格式
+        const compatibleThoughts = thoughts.map(t => ({
+          id: t.id,
+          content: t.content,
+          timestamp: t.timestamp,
+          tags: t.tags || []
+        }))
+        await engine.loadGraphData(compatibleThoughts, knowledgeItems)
         
         // 获取初始统计信息
         const stats = await engine.getStatistics()
@@ -130,7 +138,15 @@ export function KnowledgeGraph({
     
     const updateData = async () => {
       try {
-        await engineRef.current.loadGraphData(thoughts, knowledgeItems)
+        if (!engineRef.current) return
+        
+        const compatibleThoughts = thoughts.map(t => ({
+          id: t.id,
+          content: t.content, 
+          timestamp: t.timestamp,
+          tags: t.tags || []
+        }))
+        await engineRef.current.loadGraphData(compatibleThoughts, knowledgeItems)
         const stats = await engineRef.current.getStatistics()
         setStatistics(stats)
       } catch (err) {
@@ -147,7 +163,7 @@ export function KnowledgeGraph({
       setSelectedNode(event.target.id)
       setSelectedEdge(null)
       // 调用原始的onNodeClick回调（需要获取节点数据）
-      const nodeData = thoughts.find(t => t.id === event.target.id) || 
+      const nodeData = thoughts.find(t => (t as any).id === event.target.id) || 
                       knowledgeItems.find(k => k.id === event.target.id)
       if (nodeData && onNodeClick) {
         onNodeClick(nodeData)

@@ -1563,6 +1563,89 @@ export class GraphVisualizationEngine {
       this.svg.remove()
     }
   }
+
+  // 添加缺失的public方法
+  zoomIn(options?: any): void {
+    this.currentZoom = Math.min(this.currentZoom * 1.2, 5)
+    this.render()
+  }
+
+  zoomOut(options?: any): void {
+    this.currentZoom = Math.max(this.currentZoom / 1.2, 0.1)
+    this.render()
+  }
+
+  resetView(options?: any): void {
+    this.currentZoom = 1
+    this.panX = 0
+    this.panY = 0
+    this.render()
+  }
+
+  getZoom(): number {
+    return this.currentZoom || 1
+  }
+
+  pauseAnimation(): void {
+    this.isAnimating = false
+  }
+
+  startAnimation(): void {
+    this.isAnimating = true
+    this.animationLoop()
+  }
+
+  search(query: string): any[] {
+    return this.data.nodes.filter(node => 
+      node.label?.toLowerCase().includes(query.toLowerCase())
+    )
+  }
+
+  highlightNodes(nodeIds: string[]): void {
+    this.data.nodes.forEach(node => {
+      node.highlighted = nodeIds.includes(node.id)
+    })
+    this.render()
+  }
+
+  clearHighlight(): void {
+    this.data.nodes.forEach(node => {
+      node.highlighted = false
+    })
+    this.render()
+  }
+
+  async getStatistics(): Promise<any> {
+    return {
+      nodeCount: this.data.nodes.length,
+      edgeCount: this.data.edges.length,
+      clusterCount: 0,
+      density: this.data.nodes.length > 1 ? 
+        this.data.edges.length / (this.data.nodes.length * (this.data.nodes.length - 1)) : 0
+    }
+  }
+
+  exportData(): any {
+    return {
+      nodes: this.data.nodes,
+      edges: this.data.edges,
+      config: this.config
+    }
+  }
+
+  undo(): void {
+    // 撤销功能
+  }
+
+  redo(): void {
+    // 重做功能
+  }
+
+  // 添加缺失的私有属性
+  private currentZoom = 1
+  private panX = 0  
+  private panY = 0
+  private isAnimating = false
 }
 
 // 单例导出
