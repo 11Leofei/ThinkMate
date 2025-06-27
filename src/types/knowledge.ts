@@ -61,7 +61,7 @@ export interface ThoughtKnowledgeLink {
 }
 
 export interface KnowledgeGraph {
-  nodes: (KnowledgeItem | EnhancedThought)[]
+  nodes: (KnowledgeItem | any)[]
   edges: (KnowledgeConnection | ThoughtKnowledgeLink)[]
   clusters?: KnowledgeCluster[]
 }

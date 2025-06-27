@@ -36,7 +36,7 @@ export function FileUpload({
     const fileArray = Array.from(files).slice(0, maxFiles)
     
     for (const file of fileArray) {
-      const uploadId = Date.now() + Math.random()
+      // const uploadId = Date.now() + Math.random()
       const initialProgress: UploadProgress = {
         file,
         progress: 0,

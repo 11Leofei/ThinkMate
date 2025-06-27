@@ -1,533 +1,541 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { 
   ZoomIn, ZoomOut, RotateCcw, Filter, Search, 
-  Brain, BookOpen, Link, Maximize2, Settings
+  Brain, BookOpen, Link, Maximize2, Settings,
+  Play, Pause, Download, Move, Layers
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { KnowledgeGraph as GraphData, KnowledgeItem, EnhancedThought } from '@/types'
 import { getKnowledgeService } from '@/lib/knowledgeService'
+import { GraphVisualizationEngine } from '../../lib/visualization/GraphVisualizationEngine'
+import { 
+  GraphVisualizationConfig,
+  VisualizationMode,
+  LayoutAlgorithm,
+  RenderEngine,
+  GraphInteractionEvent,
+  NodeVisualization,
+  EdgeVisualization,
+  GraphStatistics,
+  GraphFilter
+} from '../../lib/visualization/types'
 
 interface KnowledgeGraphProps {
   thoughts?: EnhancedThought[]
+  knowledgeItems?: KnowledgeItem[]
   onNodeClick?: (node: KnowledgeItem | EnhancedThought) => void
   className?: string
+  height?: number
+  initialConfig?: Partial<GraphVisualizationConfig>
 }
 
-interface GraphNode {
-  id: string
-  x: number
-  y: number
-  type: 'thought' | 'knowledge'
-  data: KnowledgeItem | EnhancedThought
-  size: number
-  color: string
-  connections: string[]
-}
-
-interface GraphEdge {
-  id: string
-  from: string
-  to: string
-  type: string
-  strength: number
-  color: string
-}
-
-export function KnowledgeGraph({ thoughts = [], onNodeClick, className }: KnowledgeGraphProps) {
-  const [graphData, setGraphData] = useState<GraphData | null>(null)
-  const [nodes, setNodes] = useState<GraphNode[]>([])
-  const [edges, setEdges] = useState<GraphEdge[]>([])
-  const [selectedNode, setSelectedNode] = useState<string | null>(null)
-  const [hoveredNode, setHoveredNode] = useState<string | null>(null)
-  const [zoomLevel, setZoomLevel] = useState(1)
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
-  const [showFilters, setShowFilters] = useState(false)
-  const [filters, setFilters] = useState({
-    showThoughts: true,
-    showKnowledge: true,
-    minConnectionStrength: 0,
-    selectedTypes: new Set<string>()
-  })
-  
-  const svgRef = useRef<SVGSVGElement>(null)
+export function KnowledgeGraph({ 
+  thoughts = [], 
+  knowledgeItems = [],
+  onNodeClick, 
+  className,
+  height = 600,
+  initialConfig = {}
+}: KnowledgeGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const knowledgeService = getKnowledgeService()
+  const engineRef = useRef<GraphVisualizationEngine | null>(null)
+  
+  // 组件状态
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isPlaying, setIsPlaying] = useState(false)
+  
+  // 图谱状态
+  const [selectedNode, setSelectedNode] = useState<string | null>(null)
+  const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null)
+  const [statistics, setStatistics] = useState<GraphStatistics | null>(null)
+  
+  // 控制面板状态
+  const [showSettings, setShowSettings] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  
+  // 可视化设置
+  const [visualizationMode, setVisualizationMode] = useState<VisualizationMode>(VisualizationMode.OVERVIEW)
+  const [layoutAlgorithm, setLayoutAlgorithm] = useState<LayoutAlgorithm>(LayoutAlgorithm.FORCE_DIRECTED)
+  const [renderEngine, setRenderEngine] = useState<RenderEngine>(RenderEngine.CANVAS)
+  const [zoom, setZoom] = useState(1)
+  
+  // 过滤器
+  const [filters, setFilters] = useState<GraphFilter[]>([])
+  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set())
 
-  // 加载图谱数据
+  // 初始化图谱引擎
   useEffect(() => {
-    loadGraphData()
-  }, [thoughts])
+    if (!containerRef.current) return
+    
+    const initEngine = async () => {
+      try {
+        setIsLoading(true)
+        setError(null)
+        
+        // 创建引擎实例
+        const engine = new GraphVisualizationEngine(containerRef.current, {
+          width: containerRef.current.clientWidth,
+          height: height,
+          renderEngine,
+          layoutAlgorithm,
+          mode: visualizationMode,
+          ...initialConfig
+        })
+        
+        engineRef.current = engine
+        
+        // 注册事件监听器
+        engine.on('nodeClick', handleNodeClick)
+        engine.on('edgeClick', handleEdgeClick)
+        engine.on('nodeHover', handleNodeHover)
+        engine.on('selectionChange', handleSelectionChange)
+        engine.on('error', handleError)
+        engine.on('layoutComplete', handleLayoutComplete)
+        
+        // 加载数据
+        await engine.loadGraphData(thoughts, knowledgeItems)
+        
+        // 获取初始统计信息
+        const stats = await engine.getStatistics()
+        setStatistics(stats)
+        
+        setIsLoading(false)
+      } catch (err) {
+        console.error('初始化图谱引擎失败:', err)
+        setError(err instanceof Error ? err.message : '未知错误')
+        setIsLoading(false)
+      }
+    }
+    
+    initEngine()
+    
+    // 清理函数
+    return () => {
+      if (engineRef.current) {
+        engineRef.current.destroy()
+        engineRef.current = null
+      }
+    }
+  }, []) // 只在组件挂载时初始化一次
 
-  // 生成节点和边
+  // 数据更新
   useEffect(() => {
-    if (graphData) {
-      generateNodesAndEdges()
-    }
-  }, [graphData, filters])
-
-  const loadGraphData = async () => {
-    const graph = knowledgeService.generateKnowledgeGraph(thoughts)
-    setGraphData(graph)
-  }
-
-  const generateNodesAndEdges = () => {
-    if (!graphData) return
-
-    const newNodes: GraphNode[] = []
-    const newEdges: GraphEdge[] = []
-    const containerWidth = containerRef.current?.clientWidth || 800
-    const containerHeight = containerRef.current?.clientHeight || 600
-
-    // 生成节点
-    graphData.nodes.forEach((node, index) => {
-      const isThought = 'content' in node
-      const isKnowledge = 'type' in node && !('content' in node)
-
-      // 应用过滤器
-      if (isThought && !filters.showThoughts) return
-      if (isKnowledge && !filters.showKnowledge) return
-
-      // 计算节点位置（简单的圆形布局）
-      const angle = (index / graphData.nodes.length) * 2 * Math.PI
-      const radius = Math.min(containerWidth, containerHeight) * 0.3
-      const centerX = containerWidth / 2
-      const centerY = containerHeight / 2
-
-      const graphNode: GraphNode = {
-        id: node.id,
-        x: centerX + Math.cos(angle) * radius + (Math.random() - 0.5) * 100,
-        y: centerY + Math.sin(angle) * radius + (Math.random() - 0.5) * 100,
-        type: isThought ? 'thought' : 'knowledge',
-        data: node,
-        size: isThought ? 8 : 12,
-        color: getNodeColor(node),
-        connections: []
+    if (!engineRef.current || isLoading) return
+    
+    const updateData = async () => {
+      try {
+        await engineRef.current.loadGraphData(thoughts, knowledgeItems)
+        const stats = await engineRef.current.getStatistics()
+        setStatistics(stats)
+      } catch (err) {
+        console.error('更新图谱数据失败:', err)
       }
-
-      newNodes.push(graphNode)
-    })
-
-    // 生成边
-    graphData.edges.forEach((edge) => {
-      const fromNode = newNodes.find(n => n.id === getEdgeFromId(edge))
-      const toNode = newNodes.find(n => n.id === getEdgeToId(edge))
-
-      if (!fromNode || !toNode) return
-
-      const strength = getEdgeStrength(edge)
-      if (strength < filters.minConnectionStrength) return
-
-      const graphEdge: GraphEdge = {
-        id: edge.id,
-        from: fromNode.id,
-        to: toNode.id,
-        type: getEdgeType(edge),
-        strength,
-        color: getEdgeColor(edge)
-      }
-
-      newEdges.push(graphEdge)
-
-      // 更新节点连接信息
-      fromNode.connections.push(toNode.id)
-      toNode.connections.push(fromNode.id)
-    })
-
-    setNodes(newNodes)
-    setEdges(newEdges)
-  }
-
-  // 处理鼠标事件
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true)
-    setDragStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y })
-  }
-
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (isDragging) {
-      setPanOffset({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y
-      })
     }
-  }, [isDragging, dragStart])
+    
+    updateData()
+  }, [thoughts, knowledgeItems])
 
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false)
+  // 事件处理器
+  const handleNodeClick = useCallback((event: GraphInteractionEvent) => {
+    if (event.target.type === 'node' && event.target.id) {
+      setSelectedNode(event.target.id)
+      setSelectedEdge(null)
+      // 调用原始的onNodeClick回调（需要获取节点数据）
+      const nodeData = thoughts.find(t => t.id === event.target.id) || 
+                      knowledgeItems.find(k => k.id === event.target.id)
+      if (nodeData && onNodeClick) {
+        onNodeClick(nodeData)
+      }
+    }
+  }, [thoughts, knowledgeItems, onNodeClick])
+
+  const handleEdgeClick = useCallback((event: GraphInteractionEvent) => {
+    if (event.target.type === 'edge' && event.target.id) {
+      setSelectedEdge(event.target.id)
+      setSelectedNode(null)
+    }
   }, [])
 
-  useEffect(() => {
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove)
-      document.addEventListener('mouseup', handleMouseUp)
+  const handleNodeHover = useCallback((event: GraphInteractionEvent) => {
+    setHoveredNode(event.target.id || null)
+  }, [])
+
+  const handleSelectionChange = useCallback((selection: { nodes: string[], edges: string[] }) => {
+    if (selection.nodes.length > 0) {
+      setSelectedNode(selection.nodes[0])
+      setSelectedEdge(null)
+    } else if (selection.edges.length > 0) {
+      setSelectedEdge(selection.edges[0])
+      setSelectedNode(null)
     }
+  }, [])
 
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
+  const handleError = useCallback((error: Error) => {
+    console.error('图谱错误:', error)
+    setError(error.message)
+  }, [])
+
+  const handleLayoutComplete = useCallback(() => {
+    console.log('布局计算完成')
+  }, [])
+
+  // 控制方法
+  const handleZoomIn = useCallback(() => {
+    if (engineRef.current) {
+      engineRef.current.zoomIn()
+      setZoom(engineRef.current.getZoom())
     }
-  }, [isDragging, handleMouseMove, handleMouseUp])
+  }, [])
 
-  // 缩放控制
-  const handleZoom = (delta: number) => {
-    const newZoom = Math.max(0.1, Math.min(3, zoomLevel + delta))
-    setZoomLevel(newZoom)
-  }
+  const handleZoomOut = useCallback(() => {
+    if (engineRef.current) {
+      engineRef.current.zoomOut()
+      setZoom(engineRef.current.getZoom())
+    }
+  }, [])
 
-  const resetView = () => {
-    setZoomLevel(1)
-    setPanOffset({ x: 0, y: 0 })
-  }
+  const handleResetView = useCallback(() => {
+    if (engineRef.current) {
+      engineRef.current.resetView()
+      setZoom(1)
+    }
+  }, [])
 
-  // 节点点击
-  const handleNodeClick = (node: GraphNode) => {
-    setSelectedNode(node.id)
-    onNodeClick?.(node.data)
-  }
-
-  // 工具函数
-  const getNodeColor = (node: KnowledgeItem | EnhancedThought): string => {
-    if ('content' in node) {
-      // 思想节点
-      return '#4ECDC4'
+  const handleToggleFullscreen = useCallback(() => {
+    setIsFullscreen(!isFullscreen)
+    if (!isFullscreen && containerRef.current) {
+      containerRef.current.requestFullscreen?.()
     } else {
-      // 知识库节点
-      const colorMap = {
-        book: '#FF6B6B',
-        article: '#4ECDC4',
-        paper: '#45B7D1',
-        course: '#96CEB4',
-        podcast: '#FFEAA7',
-        video: '#DDA0DD',
-        note: '#FFB347'
-      }
-      return colorMap[node.type] || '#808080'
+      document.exitFullscreen?.()
     }
+  }, [isFullscreen])
+
+  const handleToggleAnimation = useCallback(() => {
+    if (engineRef.current) {
+      if (isPlaying) {
+        engineRef.current.pauseAnimation()
+      } else {
+        engineRef.current.startAnimation()
+      }
+      setIsPlaying(!isPlaying)
+    }
+  }, [isPlaying])
+
+  const handleExport = useCallback(async (format: 'png' | 'svg' | 'json') => {
+    if (!engineRef.current) return
+    
+    try {
+      const data = await engineRef.current.export({ 
+        format, 
+        quality: 0.9,
+        includeMetadata: true 
+      })
+      
+      // 创建下载链接
+      const blob = new Blob([data], { 
+        type: format === 'json' ? 'application/json' : `image/${format}` 
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `knowledge-graph-${new Date().toISOString()}.${format}`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('导出失败:', err)
+    }
+  }, [])
+
+  const handleSearch = useCallback((query: string) => {
+    if (!engineRef.current) return
+    
+    setSearchQuery(query)
+    if (query) {
+      engineRef.current.search(query)
+    } else {
+      engineRef.current.clearSearch()
+    }
+  }, [])
+
+  const handleModeChange = useCallback((mode: VisualizationMode) => {
+    if (!engineRef.current) return
+    
+    setVisualizationMode(mode)
+    engineRef.current.setVisualizationMode(mode)
+  }, [])
+
+  const handleLayoutChange = useCallback(async (layout: LayoutAlgorithm) => {
+    if (!engineRef.current) return
+    
+    setLayoutAlgorithm(layout)
+    await engineRef.current.setLayoutAlgorithm(layout)
+  }, [])
+
+  const handleFilterToggle = useCallback((filterId: string) => {
+    const newActiveFilters = new Set(activeFilters)
+    if (newActiveFilters.has(filterId)) {
+      newActiveFilters.delete(filterId)
+    } else {
+      newActiveFilters.add(filterId)
+    }
+    setActiveFilters(newActiveFilters)
+    
+    if (engineRef.current) {
+      engineRef.current.applyFilters(Array.from(newActiveFilters))
+    }
+  }, [activeFilters])
+
+  // 渲染加载状态
+  if (isLoading) {
+    return (
+      <div className={cn("flex items-center justify-center", `h-[${height}px]`, className)}>
+        <div className="text-center">
+          <Brain className="w-12 h-12 text-gray-400 animate-pulse mx-auto mb-4" />
+          <p className="text-gray-500">正在构建知识图谱...</p>
+        </div>
+      </div>
+    )
   }
 
-  const getEdgeFromId = (edge: any): string => {
-    return edge.fromKnowledgeId || edge.fromThoughtId || edge.thoughtId
-  }
-
-  const getEdgeToId = (edge: any): string => {
-    return edge.toKnowledgeId || edge.toThoughtId || edge.knowledgeId
-  }
-
-  const getEdgeStrength = (edge: any): number => {
-    return edge.strength || edge.relevanceScore || 0.5
-  }
-
-  const getEdgeType = (edge: any): string => {
-    return edge.type || 'related'
-  }
-
-  const getEdgeColor = (edge: any): string => {
-    const strength = getEdgeStrength(edge)
-    const opacity = Math.max(0.2, strength)
-    return `rgba(100, 100, 100, ${opacity})`
+  // 渲染错误状态
+  if (error) {
+    return (
+      <div className={cn("flex items-center justify-center", `h-[${height}px]`, className)}>
+        <div className="text-center">
+          <p className="text-red-500 mb-4">加载知识图谱失败</p>
+          <p className="text-gray-500 text-sm">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            重试
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className={cn("relative w-full h-full bg-card border border-border rounded-lg overflow-hidden", className)}>
+    <div className={cn("relative", isFullscreen ? 'fixed inset-0 z-50 bg-gray-900' : '', className)}>
+      {/* 图谱容器 */}
+      <div 
+        ref={containerRef}
+        className="w-full bg-gray-50 dark:bg-gray-800 relative"
+        style={{ height: isFullscreen ? '100vh' : height }}
+      />
+      
       {/* 控制面板 */}
-      <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
-        <div className="bg-background/90 backdrop-blur-sm border border-border rounded-lg p-2 flex gap-2">
-          <button
-            onClick={() => handleZoom(0.1)}
-            className="p-2 hover:bg-muted rounded-md transition-colors"
-            title="放大"
+      <div className="absolute top-4 left-4 right-4 flex justify-between items-start pointer-events-none">
+        {/* 左侧控制 */}
+        <div className="flex flex-col gap-2 pointer-events-auto">
+          {/* 模式选择 */}
+          <div className="bg-white dark:bg-gray-700 rounded-lg shadow-lg p-2">
+            <select
+              value={visualizationMode}
+              onChange={(e) => handleModeChange(e.target.value as VisualizationMode)}
+              className="text-sm bg-transparent outline-none"
+            >
+              <option value={VisualizationMode.OVERVIEW}>全景模式</option>
+              <option value={VisualizationMode.FOCUS}>聚焦模式</option>
+              <option value={VisualizationMode.CLUSTER}>集群模式</option>
+              <option value={VisualizationMode.PATH}>路径模式</option>
+              <option value={VisualizationMode.TEMPORAL}>时间模式</option>
+              <option value={VisualizationMode.COMPARISON}>对比模式</option>
+            </select>
+          </div>
+          
+          {/* 布局选择 */}
+          <div className="bg-white dark:bg-gray-700 rounded-lg shadow-lg p-2">
+            <select
+              value={layoutAlgorithm}
+              onChange={(e) => handleLayoutChange(e.target.value as LayoutAlgorithm)}
+              className="text-sm bg-transparent outline-none"
+            >
+              <option value={LayoutAlgorithm.FORCE_DIRECTED}>力导向布局</option>
+              <option value={LayoutAlgorithm.HIERARCHICAL}>层次布局</option>
+              <option value={LayoutAlgorithm.CIRCULAR}>圆形布局</option>
+              <option value={LayoutAlgorithm.RADIAL}>径向布局</option>
+              <option value={LayoutAlgorithm.GRID}>网格布局</option>
+              <option value={LayoutAlgorithm.ORGANIC}>有机布局</option>
+              <option value={LayoutAlgorithm.TIMELINE}>时间线布局</option>
+            </select>
+          </div>
+        </div>
+        
+        {/* 右侧工具栏 */}
+        <div className="flex gap-2 pointer-events-auto">
+          {/* 搜索 */}
+          <motion.div
+            initial={false}
+            animate={{ width: showSearch ? 200 : 40 }}
+            className="bg-white dark:bg-gray-700 rounded-lg shadow-lg overflow-hidden"
           >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => handleZoom(-0.1)}
-            className="p-2 hover:bg-muted rounded-md transition-colors"
-            title="缩小"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <button
-            onClick={resetView}
-            className="p-2 hover:bg-muted rounded-md transition-colors"
-            title="重置视图"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
+            {showSearch ? (
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                placeholder="搜索节点..."
+                className="w-full px-3 py-2 text-sm bg-transparent outline-none"
+                autoFocus
+              />
+            ) : (
+              <button
+                onClick={() => setShowSearch(true)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
+              >
+                <Search className="w-5 h-5" />
+              </button>
+            )}
+          </motion.div>
+          
+          {/* 过滤器 */}
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={cn(
-              "p-2 rounded-md transition-colors",
-              showFilters ? "bg-primary text-white" : "hover:bg-muted"
-            )}
-            title="过滤器"
+            className="p-2 bg-white dark:bg-gray-700 rounded-lg shadow-lg hover:bg-gray-100 dark:hover:bg-gray-600"
           >
-            <Filter className="w-4 h-4" />
+            <Filter className="w-5 h-5" />
+          </button>
+          
+          {/* 设置 */}
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="p-2 bg-white dark:bg-gray-700 rounded-lg shadow-lg hover:bg-gray-100 dark:hover:bg-gray-600"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
+          
+          {/* 全屏 */}
+          <button
+            onClick={handleToggleFullscreen}
+            className="p-2 bg-white dark:bg-gray-700 rounded-lg shadow-lg hover:bg-gray-100 dark:hover:bg-gray-600"
+          >
+            <Maximize2 className="w-5 h-5" />
           </button>
         </div>
-
-        {/* 图例 */}
-        <div className="bg-background/90 backdrop-blur-sm border border-border rounded-lg p-3">
-          <div className="text-xs font-medium mb-2">图例</div>
-          <div className="space-y-1 text-xs">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-[#4ECDC4]" />
-              <span>思想</span>
+      </div>
+      
+      {/* 底部控制栏 */}
+      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2 bg-white dark:bg-gray-700 rounded-lg shadow-lg p-2">
+        {/* 缩放控制 */}
+        <button
+          onClick={handleZoomOut}
+          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
+        >
+          <ZoomOut className="w-5 h-5" />
+        </button>
+        
+        <span className="px-3 py-2 text-sm min-w-[60px] text-center">
+          {Math.round(zoom * 100)}%
+        </span>
+        
+        <button
+          onClick={handleZoomIn}
+          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
+        >
+          <ZoomIn className="w-5 h-5" />
+        </button>
+        
+        <div className="w-px bg-gray-300 dark:bg-gray-600 mx-1" />
+        
+        {/* 动画控制 */}
+        <button
+          onClick={handleToggleAnimation}
+          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
+        >
+          {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+        </button>
+        
+        {/* 重置视图 */}
+        <button
+          onClick={handleResetView}
+          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
+        >
+          <RotateCcw className="w-5 h-5" />
+        </button>
+        
+        <div className="w-px bg-gray-300 dark:bg-gray-600 mx-1" />
+        
+        {/* 导出 */}
+        <button
+          onClick={() => handleExport('png')}
+          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
+          title="导出为PNG"
+        >
+          <Download className="w-5 h-5" />
+        </button>
+      </div>
+      
+      {/* 统计信息 */}
+      {statistics && (
+        <div className="absolute bottom-4 left-4 bg-white dark:bg-gray-700 rounded-lg shadow-lg p-3 text-sm">
+          <div className="flex gap-4">
+            <div>
+              <span className="text-gray-500 dark:text-gray-400">节点:</span>
+              <span className="ml-1 font-medium">{statistics.overview.nodeCount}</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-[#FF6B6B]" />
-              <span>知识库</span>
+            <div>
+              <span className="text-gray-500 dark:text-gray-400">连接:</span>
+              <span className="ml-1 font-medium">{statistics.overview.edgeCount}</span>
+            </div>
+            <div>
+              <span className="text-gray-500 dark:text-gray-400">密度:</span>
+              <span className="ml-1 font-medium">{statistics.overview.density.toFixed(3)}</span>
             </div>
           </div>
         </div>
-
-        {/* 过滤器面板 */}
-        {showFilters && (
+      )}
+      
+      {/* 节点详情面板 */}
+      <AnimatePresence>
+        {selectedNode && (
           <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-background/90 backdrop-blur-sm border border-border rounded-lg p-3 min-w-[200px]"
+            initial={{ x: 300, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 300, opacity: 0 }}
+            className="absolute top-20 right-4 w-80 bg-white dark:bg-gray-700 rounded-lg shadow-lg p-4"
           >
-            <div className="text-xs font-medium mb-3">过滤选项</div>
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={filters.showThoughts}
-                  onChange={(e) => setFilters(prev => ({ ...prev, showThoughts: e.target.checked }))}
-                  className="rounded"
-                />
-                显示思想
-              </label>
-              <label className="flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={filters.showKnowledge}
-                  onChange={(e) => setFilters(prev => ({ ...prev, showKnowledge: e.target.checked }))}
-                  className="rounded"
-                />
-                显示知识库
-              </label>
-              <div className="text-xs">
-                <label>连接强度: {filters.minConnectionStrength.toFixed(1)}</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={filters.minConnectionStrength}
-                  onChange={(e) => setFilters(prev => ({ ...prev, minConnectionStrength: parseFloat(e.target.value) }))}
-                  className="w-full"
-                />
-              </div>
+            <h3 className="font-medium mb-3">节点详情</h3>
+            <div className="space-y-2 text-sm">
+              <p>ID: {selectedNode}</p>
+              {/* 更多节点信息 */}
             </div>
           </motion.div>
         )}
-      </div>
-
-      {/* 信息面板 */}
-      <div className="absolute top-4 right-4 z-10">
-        <div className="bg-background/90 backdrop-blur-sm border border-border rounded-lg p-3">
-          <div className="text-xs font-medium mb-2">统计信息</div>
-          <div className="space-y-1 text-xs text-muted-foreground">
-            <div>节点: {nodes.length}</div>
-            <div>连接: {edges.length}</div>
-            <div>缩放: {(zoomLevel * 100).toFixed(0)}%</div>
-          </div>
-        </div>
-      </div>
-
-      {/* SVG 图谱 */}
-      <div ref={containerRef} className="w-full h-full">
-        <svg
-          ref={svgRef}
-          className="w-full h-full cursor-grab active:cursor-grabbing"
-          onMouseDown={handleMouseDown}
-          style={{
-            transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`
-          }}
-        >
-          {/* 边 */}
-          <g>
-            {edges.map((edge) => {
-              const fromNode = nodes.find(n => n.id === edge.from)
-              const toNode = nodes.find(n => n.id === edge.to)
-              
-              if (!fromNode || !toNode) return null
-
-              return (
-                <line
-                  key={edge.id}
-                  x1={fromNode.x}
-                  y1={fromNode.y}
-                  x2={toNode.x}
-                  y2={toNode.y}
-                  stroke={edge.color}
-                  strokeWidth={edge.strength * 3}
-                  strokeOpacity={0.6}
-                  className="transition-all duration-200"
-                />
-              )
-            })}
-          </g>
-
-          {/* 节点 */}
-          <g>
-            {nodes.map((node) => (
-              <g key={node.id}>
-                {/* 选中高亮 */}
-                {selectedNode === node.id && (
-                  <circle
-                    cx={node.x}
-                    cy={node.y}
-                    r={node.size + 4}
-                    fill="none"
-                    stroke="#3B82F6"
-                    strokeWidth="2"
-                    className="animate-pulse"
-                  />
-                )}
-                
-                {/* 悬停高亮 */}
-                {hoveredNode === node.id && (
-                  <circle
-                    cx={node.x}
-                    cy={node.y}
-                    r={node.size + 2}
-                    fill="none"
-                    stroke={node.color}
-                    strokeWidth="1"
-                    strokeOpacity="0.5"
-                  />
-                )}
-                
-                {/* 主节点 */}
-                <circle
-                  cx={node.x}
-                  cy={node.y}
-                  r={node.size}
-                  fill={node.color}
-                  stroke="white"
-                  strokeWidth="2"
-                  className="cursor-pointer transition-all duration-200 hover:r-[14px]"
-                  onClick={() => handleNodeClick(node)}
-                  onMouseEnter={() => setHoveredNode(node.id)}
-                  onMouseLeave={() => setHoveredNode(null)}
-                />
-                
-                {/* 节点图标 */}
-                <foreignObject
-                  x={node.x - 8}
-                  y={node.y - 8}
-                  width="16"
-                  height="16"
-                  className="pointer-events-none"
-                >
-                  <div className="flex items-center justify-center w-full h-full text-white">
-                    {node.type === 'thought' ? (
-                      <Brain className="w-3 h-3" />
-                    ) : (
-                      <BookOpen className="w-3 h-3" />
-                    )}
-                  </div>
-                </foreignObject>
-                
-                {/* 节点标签 */}
-                {(hoveredNode === node.id || selectedNode === node.id) && (
-                  <text
-                    x={node.x}
-                    y={node.y - node.size - 8}
-                    textAnchor="middle"
-                    className="text-xs fill-foreground font-medium pointer-events-none"
-                  >
-                    {'title' in node.data 
-                      ? node.data.title.substring(0, 20) + (node.data.title.length > 20 ? '...' : '')
-                      : node.data.content.substring(0, 20) + (node.data.content.length > 20 ? '...' : '')
-                    }
-                  </text>
-                )}
-              </g>
-            ))}
-          </g>
-        </svg>
-      </div>
-
-      {/* 选中节点详情 */}
-      {selectedNode && (
-        <div className="absolute bottom-4 left-4 right-4 z-10">
+      </AnimatePresence>
+      
+      {/* 过滤器面板 */}
+      <AnimatePresence>
+        {showFilters && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-background/95 backdrop-blur-sm border border-border rounded-lg p-4 max-w-md"
+            initial={{ y: -20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -20, opacity: 0 }}
+            className="absolute top-20 right-4 w-64 bg-white dark:bg-gray-700 rounded-lg shadow-lg p-4"
           >
-            {(() => {
-              const node = nodes.find(n => n.id === selectedNode)
-              if (!node) return null
-
-              const data = node.data
-              const isThought = 'content' in data
-
-              return (
-                <div>
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      {isThought ? (
-                        <Brain className="w-4 h-4 text-[#4ECDC4]" />
-                      ) : (
-                        <BookOpen className="w-4 h-4 text-[#FF6B6B]" />
-                      )}
-                      <span className="text-sm font-medium">
-                        {isThought ? '思想' : '知识库'}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setSelectedNode(null)}
-                      className="p-1 hover:bg-muted rounded"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  
-                  <div className="text-sm mb-2">
-                    <div className="font-medium mb-1">
-                      {isThought 
-                        ? data.content.substring(0, 50) + (data.content.length > 50 ? '...' : '')
-                        : data.title
-                      }
-                    </div>
-                    {!isThought && data.description && (
-                      <div className="text-muted-foreground text-xs">
-                        {data.description.substring(0, 100) + (data.description.length > 100 ? '...' : '')}
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="text-xs text-muted-foreground">
-                    连接数: {node.connections.length}
-                  </div>
-                </div>
-              )
-            })()}
-          </motion.div>
-        </div>
-      )}
-
-      {/* 空状态 */}
-      {nodes.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center">
-            <div className="w-16 h-16 mx-auto mb-4 opacity-50">
-              <Network className="w-full h-full" />
+            <h3 className="font-medium mb-3">过滤器</h3>
+            <div className="space-y-2">
+              {filters.map(filter => (
+                <label key={filter.id} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={activeFilters.has(filter.id)}
+                    onChange={() => handleFilterToggle(filter.id)}
+                    className="rounded"
+                  />
+                  <span className="text-sm">{filter.name}</span>
+                </label>
+              ))}
             </div>
-            <h3 className="text-lg font-medium mb-2">暂无图谱数据</h3>
-            <p className="text-muted-foreground">
-              添加一些思想和知识库项目来查看关联图谱
-            </p>
-          </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

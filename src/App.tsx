@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { PenTool, Sparkles, Brain, Calendar, Settings, Globe, Search, Network, BarChart3, Upload, BookOpen, GitBranch, Server } from 'lucide-react'
+import { Brain, Sparkles, Calendar } from 'lucide-react'
 import { cn } from './lib/utils'
-import { Thought, Connection, MediaFile, ContentSegment, KnowledgeItem, EnhancedThought } from './types'
+import { Thought, Connection, MediaFile, ContentSegment, KnowledgeItem } from './types'
 import { useTranslation } from './hooks/useTranslation'
-import { formatRelativeTime } from './lib/timeFormat'
 import { createAIService, getAIService } from './lib/aiService'
 import { translations } from './lib/i18n'
 import { AIConfigModal } from './components/features/AIConfigModal'
+import { EnhancedSettingsModal } from './components/features/EnhancedSettingsModal'
 import { SearchBar } from './components/features/SearchBar'
 import { ThoughtCard } from './components/features/ThoughtCard'
 import { ThoughtConnections } from './components/features/ThoughtConnections'
@@ -17,10 +17,12 @@ import { KnowledgeBase } from './components/features/KnowledgeBase'
 import { KnowledgeGraph } from './components/features/KnowledgeGraph'
 import { MCPIntegration } from './components/features/MCPIntegration'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
+import { EnhancedSidebar } from './components/layout/EnhancedSidebar'
 import { ThoughtStorage } from './lib/storage'
 import { getMediaService } from './lib/mediaService'
 import { getKnowledgeService } from './lib/knowledgeService'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { initializeThinkMateExtensions, getPluginRegistry } from './lib/architecture/PluginRegistry'
 
 function App() {
   const { t, currentLanguage, changeLanguage } = useTranslation()
@@ -29,6 +31,7 @@ function App() {
   const [isCapturing, setIsCapturing] = useState(false)
   const [liveAnalysis, setLiveAnalysis] = useState<any>(null)
   const [showAIConfig, setShowAIConfig] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [aiConfigured, setAIConfigured] = useState(false)
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const [searchResults, setSearchResults] = useState<Thought[] | null>(null)
@@ -38,7 +41,8 @@ function App() {
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([])
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([])
   const [selectedKnowledgeItem, setSelectedKnowledgeItem] = useState<string>('')
-  const [enhancedThoughts, setEnhancedThoughts] = useState<EnhancedThought[]>([])
+  const [enhancedThoughts, setEnhancedThoughts] = useState<Thought[]>([])
+  const [, setExtensionsInitialized] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mediaService = getMediaService()
   const knowledgeService = getKnowledgeService()
@@ -60,14 +64,11 @@ function App() {
     
     const loadedKnowledgeItems = knowledgeService.getKnowledgeItems()
     setKnowledgeItems(loadedKnowledgeItems)
-    
-    // 将普通thoughts转换为enhanced thoughts
-    const enhanced: EnhancedThought[] = thoughts.map(thought => ({
-      ...thought,
-      sourceFiles: [],
-      extractionMethod: 'manual'
-    }))
-    setEnhancedThoughts(enhanced)
+  }, [])
+
+  // 同步thoughts到enhancedThoughts
+  useEffect(() => {
+    setEnhancedThoughts(thoughts)
   }, [thoughts])
 
   // Auto-focus the capture input
@@ -76,6 +77,26 @@ function App() {
       textareaRef.current.focus()
     }
   }, [])
+
+  // 初始化扩展系统 - 暂时禁用以保持稳定性
+  // useEffect(() => {
+  //   const initializeExtensions = async () => {
+  //     try {
+  //       await initializeThinkMateExtensions()
+  //       setExtensionsInitialized(true)
+  //       console.log('扩展系统初始化完成')
+  //       
+  //       // 获取系统信息
+  //       const registry = getPluginRegistry()
+  //       const systemInfo = registry.getSystemInfo()
+  //       console.log('系统信息:', systemInfo)
+  //     } catch (error) {
+  //       console.error('扩展系统初始化失败:', error)
+  //     }
+  //   }
+  //   
+  //   initializeExtensions()
+  // }, [])
 
   // 初始化AI服务
   useEffect(() => {
@@ -95,8 +116,8 @@ function App() {
     }
   }, [])
 
-  // 实时分析用户输入
-  useEffect(() => {
+  // 实时分析用户输入 - 暂时禁用以保持稳定性
+  /*useEffect(() => {
     if (currentThought.length > 20) {
       if (aiConfigured) {
         const aiService = getAIService()
@@ -154,7 +175,7 @@ function App() {
     } else {
       setLiveAnalysis(null)
     }
-  }, [currentThought, aiConfigured, thoughts])
+  }, [currentThought, aiConfigured, thoughts])*/
 
   // 生成整体思维洞察
   const [overallAnalysis, setOverallAnalysis] = useState<any>(null)
@@ -346,16 +367,12 @@ function App() {
       
       // 为每个片段创建想法
       for (const segment of segments) {
-        const newThought: EnhancedThought = {
+        const newThought: Thought = {
           id: Date.now().toString() + Math.random(),
           content: segment.content,
           timestamp: new Date(),
           tags: [segment.type],
-          category: segment.type,
-          sourceFiles: [file],
-          extractionMethod: file.type === 'image' ? 'ai-ocr' : 
-                          file.type === 'audio' ? 'ai-speech' : 'ai-document',
-          sourceSegment: segment
+          category: segment.type
         }
 
         // AI分析新想法
@@ -364,7 +381,7 @@ function App() {
           if (aiService) {
             try {
               const analysis = await aiService.analyzeThought(newThought, thoughts)
-              newThought.aiAnalysis = analysis
+              ;(newThought as any).aiAnalysis = analysis
             } catch (error) {
               console.error('AI分析失败:', error)
             }
@@ -405,7 +422,7 @@ function App() {
   // 自动关联思想和知识库
   const handleAutoLink = async () => {
     try {
-      const newLinks = await knowledgeService.autoLinkThoughts(enhancedThoughts)
+      const newLinks = await knowledgeService.autoLinkThoughts(thoughts)
       console.log(`自动创建了 ${newLinks.length} 个关联`)
     } catch (error) {
       console.error('自动关联失败:', error)
@@ -540,146 +557,18 @@ function App() {
       <div className="min-h-screen bg-background text-foreground">
       {/* Main Layout */}
       <div className="flex h-screen">
-        {/* Sidebar */}
-        <motion.aside 
-          className="w-64 bg-card border-r border-border p-6 flex flex-col"
-          initial={{ x: -20, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          <div className="flex items-center gap-2 mb-8">
-            <Brain className="w-6 h-6 text-primary" />
-            <h1 className="text-lg font-semibold">{t('appName')}</h1>
-          </div>
-
-          <nav className="space-y-2 flex-1">
-            <NavItem 
-              icon={PenTool} 
-              label={t('capture')} 
-              active={currentView === 'capture'}
-              onClick={() => handleViewChange('capture')}
-            />
-            <NavItem 
-              icon={Search} 
-              label="搜索" 
-              active={currentView === 'search'}
-              onClick={() => handleViewChange('search')}
-            />
-            <NavItem 
-              icon={Sparkles} 
-              label={t('insights')} 
-              active={currentView === 'insights'}
-              onClick={() => handleViewChange('insights')}
-            />
-            <NavItem 
-              icon={Calendar} 
-              label={t('patterns')} 
-              active={currentView === 'patterns'}
-              onClick={() => handleViewChange('patterns')}
-            />
-            <NavItem 
-              icon={BarChart3} 
-              label="每日总结" 
-              active={currentView === 'daily'}
-              onClick={() => handleViewChange('daily')}
-            />
-            <NavItem 
-              icon={Network} 
-              label="思维连接" 
-              active={currentView === 'connections'}
-              onClick={() => handleViewChange('connections')}
-            />
-            <NavItem 
-              icon={Upload} 
-              label="文件上传" 
-              active={currentView === 'upload'}
-              onClick={() => handleViewChange('upload')}
-            />
-            <NavItem 
-              icon={BookOpen} 
-              label="知识库" 
-              active={currentView === 'knowledge'}
-              onClick={() => handleViewChange('knowledge')}
-            />
-            <NavItem 
-              icon={GitBranch} 
-              label="知识图谱" 
-              active={currentView === 'graph'}
-              onClick={() => handleViewChange('graph')}
-            />
-            <NavItem 
-              icon={Server} 
-              label="MCP集成" 
-              active={currentView === 'mcp'}
-              onClick={() => handleViewChange('mcp')}
-            />
-            <NavItem 
-              icon={Settings} 
-              label={t('settings')} 
-              onClick={() => setShowAIConfig(true)}
-            />
-          </nav>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-muted-foreground">
-                {thoughts.length} {t('thoughtsCount')}
-              </div>
-              <button
-                onClick={() => changeLanguage(currentLanguage === 'zh' ? 'en' : 'zh')}
-                className="p-1 rounded hover:bg-muted transition-colors"
-                title="切换语言 / Switch Language"
-              >
-                <Globe className="w-4 h-4 text-muted-foreground" />
-              </button>
-            </div>
-            
-            {/* AI状态指示器 */}
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-xs">
-                <div className={cn(
-                  "w-2 h-2 rounded-full",
-                  aiConfigured ? "bg-green-500" : "bg-yellow-500"
-                )} />
-                <span className="text-muted-foreground">
-                  AI: {aiConfigured ? '已连接' : '未配置'}
-                </span>
-                {!aiConfigured && (
-                  <button
-                    onClick={() => setShowAIConfig(true)}
-                    className="text-primary hover:text-primary-hover underline"
-                  >
-                    设置
-                  </button>
-                )}
-              </div>
-              
-              {/* AI配置详情 */}
-              {aiConfigured && (
-                <div className="text-xs text-muted-foreground pl-4">
-                  {(() => {
-                    try {
-                      const config = JSON.parse(localStorage.getItem('thinkmate-ai-config') || '{}')
-                      return `${config.provider?.toUpperCase()} ${config.model || ''}`
-                    } catch {
-                      return '配置异常'
-                    }
-                  })()}
-                </div>
-              )}
-            </div>
-            
-            {/* 存储状态 */}
-            <div className="text-xs text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-blue-500 rounded-full" />
-                <span>
-                  {lastSaved ? `已保存 ${formatRelativeTime(lastSaved)}` : '未保存'}
-                </span>
-              </div>
-            </div>
-          </div>
-        </motion.aside>
+        {/* Enhanced Sidebar */}
+        <EnhancedSidebar
+          currentView={currentView}
+          onViewChange={(view: string) => handleViewChange(view as any)}
+          thoughtsCount={thoughts.length}
+          aiConfigured={aiConfigured}
+          lastSaved={lastSaved}
+          onShowAIConfig={() => setShowSettings(true)}
+          onLanguageChange={() => changeLanguage(currentLanguage === 'zh' ? 'en' : 'zh')}
+          currentLanguage={currentLanguage}
+          onExport={exportData}
+        />
 
         {/* Main Content */}
         <main className="flex-1 flex flex-col">
@@ -1189,11 +1078,12 @@ function App() {
               <div className="h-[calc(100vh-200px)]">
                 <KnowledgeGraph
                   thoughts={enhancedThoughts}
+                  knowledgeItems={knowledgeItems}
                   onNodeClick={(node) => {
                     if ('content' in node) {
-                      setSelectedThoughtId(node.id)
+                      setSelectedThoughtId((node as any).id)
                     } else {
-                      setSelectedKnowledgeItem(node.id)
+                      setSelectedKnowledgeItem((node as any).id)
                     }
                   }}
                 />
@@ -1274,34 +1164,31 @@ function App() {
         onSave={handleAIConfig}
         currentConfig={aiConfigured ? JSON.parse(localStorage.getItem('thinkmate-ai-config') || '{}') : undefined}
       />
+
+      {/* 增强设置模态框 */}
+      <EnhancedSettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        onSave={(config) => {
+          // 处理设置保存
+          console.log('设置已保存:', config)
+          if (config.aiProvider && config.aiApiKey) {
+            handleAIConfig({
+              provider: config.aiProvider,
+              apiKey: config.aiApiKey,
+              model: config.aiModel || 'gpt-4',
+              temperature: config.aiTemperature || 0.7,
+              maxTokens: config.aiMaxTokens || 2000
+            })
+          }
+        }}
+        currentConfig={{
+          ...JSON.parse(localStorage.getItem('thinkmate-settings') || '{}'),
+          ...(aiConfigured ? JSON.parse(localStorage.getItem('thinkmate-ai-config') || '{}') : {})
+        }}
+      />
     </div>
     </ErrorBoundary>
-  )
-}
-
-interface NavItemProps {
-  icon: React.ComponentType<{ className?: string }>
-  label: string
-  active?: boolean
-  onClick?: () => void
-}
-
-function NavItem({ icon: Icon, label, active = false, onClick }: NavItemProps) {
-  return (
-    <motion.div
-      className={cn(
-        "flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer transition-colors",
-        active 
-          ? "bg-primary text-white" 
-          : "hover:bg-muted text-muted-foreground hover:text-foreground"
-      )}
-      onClick={onClick}
-      whileHover={{ x: 2 }}
-      whileTap={{ scale: 0.98 }}
-    >
-      <Icon className="w-4 h-4" />
-      <span className="text-sm font-medium">{label}</span>
-    </motion.div>
   )
 }
 
